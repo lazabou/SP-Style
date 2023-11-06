@@ -1,0 +1,33 @@
+{% set ASN = function.get_resource_value(resources, 'ASN', 'Cloud') %}
+
+protocols {
+    bgp {
+        group underlay {
+            type external;
+            local-as {{ASN}};
+            export Export-LO;
+            multipath {
+                    multiple-as;
+            }
+            {% for interface_name, iface in interfaces.items() %}
+                {% if iface.get('neighbor_interfaces') %}
+                    {% for nb in iface.get('neighbor_interfaces') %}
+                        {% if (nb['link_role'] == "internal") %}
+                   {% set PEER_ASN = function.get_resource_value(all_resources[nb['system_id']], 'ASN', 'Cloud') %}
+            neighbor {{nb['ipv4_address']}} {
+                    peer-as {{PEER_ASN}}; 
+            }
+                     {% endif %}
+                {%- endfor -%}
+            {%- endif -%} 
+        {% endfor %}
+        }
+    }
+}
+
+policy-options {
+    policy-statement Export-LO {
+        from interface lo0.0;
+        then accept;
+    }
+}
