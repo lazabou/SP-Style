@@ -1,0 +1,20 @@
+{% for interface_name, iface in interfaces.items() %}
+   {% if iface.composed_of %}
+         {% for nb in iface.get('neighbor_interfaces') %}
+{% set LACP_KEY = function.get_resource_value(all_resources[nb['system_id']], 'LACP-Key', 'Cloud') %}
+interfaces {{interface_name}}{
+      esi {
+           auto-derive {
+               lacp-pe-system-id-and-admin-key;
+           }
+           all-active;
+       }
+       aggregated-ether-options {
+           lacp {
+               system-id 00:00:00:00:00:10;
+               admin-key {{LACP_KEY}};
+           }
+       }
+        {% endfor %}   }     
+    {% endif %}
+{% endfor %}
