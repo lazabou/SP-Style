@@ -1,0 +1,14 @@
+{% set loopback_ipv4 = function.get_resource_value(resources, 'Lo0', 'Cloud') %}
+interfaces {
+    lo0 {
+        unit 0 {
+            family inet {
+                address {{loopback_ipv4}};
+            }
+        }
+    }
+}
+{% set router_id = loopback_ipv4|to_ip %}
+routing-options {
+    replace: router-id {{router_id}};
+}
