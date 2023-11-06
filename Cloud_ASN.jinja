@@ -1,0 +1,5 @@
+{% set asn = function.get_resource_value(resources, 'ASN', 'Cloud') %}
+
+routing-options {
+    replace: autonomous-system  {{asn}};
+}
