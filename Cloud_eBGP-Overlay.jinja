@@ -1,0 +1,43 @@
+{% set ASN = function.get_resource_value(resources, 'ASN', 'Cloud') %}
+{% set Lo0 = function.get_resource_value(resources, 'Lo0', 'Cloud') %}
+{% set Lo0_nomask = Lo0|to_ip %}
+
+protocols {
+    bgp {
+        group overlay {
+            type external;
+            local-as {{ASN}};
+            local-address {{Lo0_nomask}};
+            multipath {
+                    multiple-as;
+            }
+            multihop {
+{% if 'Spine' in system_tags %}
+                no-nexthop-change;
+{% endif %}
+                ttl 1;
+            }
+            family evpn {
+                signaling {
+                    loops 2;
+                }
+            }
+            vpn-apply-export;
+            {% for interface_name, iface in interfaces.items() %}
+                {% if iface.get('neighbor_interfaces') %}
+                    {% for nb in iface.get('neighbor_interfaces') %}
+                        {% if (nb['link_role'] == "internal") %}
+                    {% set PEER_ASN = function.get_resource_value(all_resources[nb['system_id']], 'ASN', 'Cloud') %}
+                    {% set PEER_LO = function.get_resource_value(all_resources[nb['system_id']], 'Lo0', 'Cloud') %}
+                    {%set PEER_LO_nomask = PEER_LO|to_ip %}
+            neighbor {{PEER_LO_nomask}} {
+                    peer-as {{PEER_ASN}}; 
+            }
+                     {% endif %}
+                {%- endfor -%}
+            {%- endif -%} 
+        {% endfor %}
+        }
+    }
+}
+
