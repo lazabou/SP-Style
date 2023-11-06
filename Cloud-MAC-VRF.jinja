@@ -1,0 +1,144 @@
+{% if 'Spine' not in system_tags %}
+    {%- set all_vrf = function.get_resource(resources,'Tenants','Cloud')%}
+    {%- if all_vrf|length -%}
+        {% set loopback_ipv4 = function.get_resource_value(resources, 'Lo0', 'Cloud' ) %}
+        {% set loopback_no_mask = loopback_ipv4|to_ip %}
+        {% for get_vrfs in all_vrf['groups'] -%}
+            {%- set ns = namespace() %}
+            {%- set ns.name = "" %}
+            {%- set ns.vlan_id = "" %}
+            {%- for vrf_name in get_vrfs['label'] -%}
+                {%- set ns.name = ns.name + vrf_name %}
+            {%- endfor -%} 
+            {%- set RT_RD = function.get_resource_value(resources,'RT-RD','Cloud','Tenants', ns.name) %}
+    
+    routing-instances VRF-{{ns.name}} {
+        instance-type vrf;
+        route-distinguisher {{loopback_no_mask}}:1000{{RT_RD}};
+        vrf-target target:65000:10000{{RT_RD}};
+        vtep-source-interface lo0.0;
+        routing-options {
+            multipath;
+            auto-export;
+        }
+        protocols {
+            evpn {
+                ip-prefix-routes {
+                    advertise direct-nexthop;
+                    encapsulation vxlan;
+                    vni 10000{{RT_RD}};
+                }
+            }
+        }
+    }
+
+    routing-instances {{ns.name}} {
+        instance-type mac-vrf;
+        service-type vlan-aware;
+        route-distinguisher {{loopback_no_mask}}:{{RT_RD}};
+        vrf-target target:65000:{{RT_RD}};
+        vtep-source-interface lo0.0;
+        protocols {
+            evpn {
+                encapsulation vxlan;
+                duplicate-mac-detection {
+                    auto-recovery-time 9;
+                }
+                extended-vni-list all;
+            }
+        }
+    }
+            {% set TENANTS_INFO = function.get_all_resources(resources,ns.name, 'Cloud', 'Tenants') %}
+            {% for INFOS in TENANTS_INFO  %}
+                {%- for item in INFOS['resources'] -%}
+                        {%- if item['resource_type'] == 'vlan' %} 
+                            {%- set ns.vlan_id = item['value'] %}
+                            {%- set ns.ip = "" -%}
+                            {%- set vlan_name = item['label'] %}
+                            {%- for item in INFOS['resources'] -%}
+                                {%- if item['resource_type'] == 'host_ip' and item['label'] == vlan_name -%}
+                                    {%- set ns.ip = item['value'] -%}
+                                {% endif %}
+                            {%- endfor %}
+    routing-instances {{ns.name}} {
+        vlans {
+            {{item['label']}} {
+                vlan-id none;
+                {%- if ns.ip != "" %} 
+                l3-interface irb.{{RT_RD}}{{ns.vlan_id}};
+                {%- endif %} 
+                vxlan {
+                    vni {{RT_RD}}{{ns.vlan_id}};
+                }
+            }
+        }
+{#        protocols {
+            evpn {
+                vni-options {
+                    vni {{RT_RD}}{{ns.vlan_id}} {
+                        vrf-target target:6500:{{ns.vlan_id}};
+                    }
+                }
+            }
+        }
+        #}
+    } 
+                {%- if ns.ip != "" %} 
+     interfaces {
+        irb {
+            unit {{RT_RD}}{{ns.vlan_id}} {
+                family inet address {{ns.ip}};
+                mac 00:ba:be:00:00:01;
+            }
+        }
+    }
+    routing-instances VRF-{{ns.name}} {
+         interface irb.{{RT_RD}}{{ns.vlan_id}};
+    }
+    
+                {%- endif %}  
+                    {% for members in item['assigned_to']  %}
+                        {%- for interface_name, iface in interfaces.items() -%}
+                            {%- if iface.get('neighbor_interfaces') -%}
+                                {%- for neighbor in iface.get('neighbor_interfaces') -%}
+                                    {%- if (neighbor['system_id'] == members) and (neighbor['link_role'] == "external") %}
+                                            {%- if not iface.part_of %}
+    interfaces {
+        {{ interface_name }} {
+            flexible-vlan-tagging;
+            encapsulation flexible-ethernet-services;
+            unit {{ns.vlan_id}} {
+                encapsulation vlan-bridge;
+                vlan-id {{ns.vlan_id}};
+                }
+        }
+    }
+    routing-instances {{ns.name}} {
+        vlans {
+            {{item['label']}} {
+            interface {{ interface_name }}.{{ns.vlan_id}};
+                }
+            }
+    }
+       
+                                        {% endif %}
+                                        {% if iface.composed_of %}
+    interfaces {
+        {{ interface_name }} {
+            unit 0 {
+                vlan-id 4094;
+            }
+        }
+    }
+                                        {% endif %}
+                                    {%- endif %}
+                                {%- endfor %} 
+                            {%- endif %}
+                        {%- endfor %}
+                    {%- endfor %}
+                {%- endif %}
+                {% endfor %} 
+            {%- endfor %} 
+        {%- endfor %} 
+    {%- endif %}   
+{% endif %}
